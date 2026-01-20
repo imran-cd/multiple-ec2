@@ -3,3 +3,4 @@
 *.tfstate.*
 *.pem
 .terraform/*
+.crash.log
