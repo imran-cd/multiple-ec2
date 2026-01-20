@@ -32,6 +32,10 @@ jobs:
             - name: Show backend.tf
               run: cat backend.tf
 
+            - name: Check tfvars file exists
+              run: ls -la terraform.tfvars
+
+
             - name: Terraform init
               run: terraform init -input=false
 
@@ -39,4 +43,4 @@ jobs:
               run: terraform validate
             
             - name: Terraform plan
-              run: terraform plan  -detailed-exitcode -no-color
+              run: terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
