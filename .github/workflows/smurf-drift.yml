@@ -1,0 +1,61 @@
+name: "Terraform Check drift"
+
+on:
+    workflow_dispatch:
+
+jobs:
+    drift_check using smurf:
+        name: Set up smurf
+        uses: clouddrove/smurf@master
+        with:
+            version: latest
+
+        permissions:
+            id-token: write
+            contents: read
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Terraforn
+              uses: hashicorp/setup-terraform@v3
+              with:
+                terraform_version: "1.8.5"
+                terraform_wrapper: false
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+
+
+
+
+
+
+
+
+
+            - name: Show backend.tf
+              run: cat backend.tf
+
+            - name: Check tfvars file exists
+              run: ls -la terraform.tfvars
+
+
+            - name: Terraform init
+              run: smurf stf init
+
+            - name: Terraform Formatting
+              run: smurf stf format
+
+            - name: Terraform Drift using Smurf
+              run: smurf stf drift
+              
+
+    
+#terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
+#good add more terraform command like output and fmt, apply
