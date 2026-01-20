@@ -39,12 +39,19 @@ jobs:
             - name: Terraform init
               run: terraform init -input=false
 
+            - name: Terraform Formatting
+              run: terraform fmt
+
             - name: Terraform validate
               run: terraform validate
             
             - name: Terraform plan
               run: terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color
+
+            - name: Terraform Outputas
+              run: terraform output
               
 
     
 #terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
+#good add more terraform command like output and fmt, apply
