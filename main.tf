@@ -29,14 +29,6 @@ resource "aws_key_pair" "ec2_keypair" {
   public_key = tls_private_key.ec2_key.public_key_openssh
 }
 
-resource "local_file" "private_key" {
-  count = var.create_private_key_file ? 1 : 0
-  
-  content         = tls_private_key.ec2_key.private_key_pem
-  filename        = var.filename
-  file_permission = "0400"
-
-}
 
 resource "aws_security_group" "ssh_sg" {
   name        = "allow-ssh"
