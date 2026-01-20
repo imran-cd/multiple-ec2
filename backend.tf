@@ -4,6 +4,5 @@ terraform {
     key          = "multiple-ec2/terraform.tfstate"
     region       = "us-east-2"
     encrypt      = true
-    use_lockfile = true
   }
 }
