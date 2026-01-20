@@ -1,0 +1,39 @@
+name: "Terraform Check drift"
+
+on:
+    workflow_dispatch:
+
+jobs:
+    drift_check:
+        name: Manual terraform drift detection
+        runs_on: ubuntu-latest
+
+        permissions:
+            id-token: write
+            contents: read
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Setup Terraforn
+              uses: hashicorp/setup-terraform@v3
+              with:
+                terraform_version: "6.28.0"
+                terraform_wrapper: false
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ inputs.aws_region }}
+
+            - name: Terraform init
+              run: terraform init -input=false
+
+            - name: Terraform validate
+              run: terraform validate
+            
+              - name: Terraform plan
+              run: terraform plan-detailed-exitcode -no-color
