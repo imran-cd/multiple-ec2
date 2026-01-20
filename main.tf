@@ -30,6 +30,8 @@ resource "aws_key_pair" "ec2_keypair" {
 }
 
 resource "local_file" "private_key" {
+  count = var.create_private_key_file ? 1 : 0
+  
   content         = tls_private_key.ec2_key.private_key_pem
   filename        = var.filename
   file_permission = "0400"

@@ -43,4 +43,8 @@ jobs:
               run: terraform validate
             
             - name: Terraform plan
-              run: terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
+              run: terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color
+              
+
+    
+#terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color

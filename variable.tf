@@ -12,6 +12,11 @@ variable "key_name" {
 
 }
 
+variable "create_private_key_file" {
+  type    = bool
+  default = true
+}
+
 
 variable "filename" {
   type = string
