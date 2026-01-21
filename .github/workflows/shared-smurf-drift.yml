@@ -6,10 +6,12 @@ on:
         smurf_version:
           required: false
           default: "latest"
+          type: string
         
         terraform_version:
           required: false
           default: "1.8.5"
+          type: string
 
         working_directory:
           required: false
