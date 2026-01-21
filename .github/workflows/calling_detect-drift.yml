@@ -1,0 +1,19 @@
+name:  TF-Drift Calling workflow Using Smurf
+on:
+    workflow_dispatch:
+
+
+jobs:
+  calling_Smurf_workflow_tfdrift-clouddrove:
+    uses: imran-cd/multiple-ec2/.github/workflows/smurf-drift.yml@master
+    with:
+        smurf_version: "latest"
+        aws_region: "us-east-2"
+        working_directory: "."
+        provider: "aws"
+        terraform_version: "1.8.5"
+    secrets:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        
+        

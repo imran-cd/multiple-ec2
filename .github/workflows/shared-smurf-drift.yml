@@ -1,7 +1,34 @@
 name: "Terraform Check drift Using Smurf"
 
 on:
-    workflow_dispatch:
+    workflow_call:
+      inputs:
+        smurf_version:
+          required: false
+          default: "latest"
+        
+        terraform_version:
+          required: false
+          default: "1.8.5"
+
+        working_directory:
+          required: false
+          type: string
+          default: "."
+
+        aws_region:
+          required: true
+          type: string
+        
+      secrets:
+        AWS_ACCESS_KEY_ID:
+          required: true
+
+        AWS_SECRET_ACCESS_KEY:
+          required: true
+
+        
+
 
 jobs:
     drift_check:
@@ -53,7 +80,7 @@ jobs:
               run: smurf stf init
 
             - name: Terraform Formatting
-              run: smurf stf format
+              run: smurf stf fmt --timeout 10s
 
             - name: Terraform Drift using Smurf
               run: smurf stf drift
