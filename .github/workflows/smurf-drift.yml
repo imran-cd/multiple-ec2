@@ -1,4 +1,4 @@
-name: "Terraform Check drift"
+name: "Terraform Check drift Using Smurf"
 
 on:
     workflow_dispatch:
@@ -61,4 +61,3 @@ jobs:
 
     
 #terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
-#good add more terraform command like output and fmt, apply
