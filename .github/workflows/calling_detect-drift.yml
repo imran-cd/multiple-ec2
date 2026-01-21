@@ -2,6 +2,10 @@ name:  TF-Drift Calling workflow Using Smurf
 on:
     workflow_dispatch:
 
+permissions:
+    id-token: write
+    contents: read
+
 
 jobs:
   calling_Smurf_workflow_tfdrift-clouddrove:
