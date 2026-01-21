@@ -4,17 +4,20 @@ on:
     workflow_dispatch:
 
 jobs:
-    drift_check using smurf:
-        name: Set up smurf
-        uses: clouddrove/smurf@master
-        with:
-            version: latest
+    drift_check:
+        name: Terraform drift check
+        runs-on: ubuntu-latest
 
         permissions:
             id-token: write
             contents: read
 
         steps:
+            - name: Install Smurf
+              uses: clouddrove/smurf@master
+              with:
+                version: latest
+
             - name: Checkout
               uses: actions/checkout@v4
 
