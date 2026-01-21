@@ -5,7 +5,7 @@ on:
 
 jobs:
   calling_Smurf_workflow_tfdrift-clouddrove:
-    uses: imran-cd/multiple-ec2/.github/workflows/smurf-drift.yml@master
+    uses: imran-cd/multiple-ec2/.github/workflows/smurf-drift.yml@main
     with:
         smurf_version: "latest"
         aws_region: "us-east-2"
