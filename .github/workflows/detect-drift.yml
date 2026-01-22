@@ -1,57 +1,167 @@
 name: "Terraform Check drift"
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
-    drift_check:
-        name: Manual terraform drift detection
-        runs-on: ubuntu-latest
+  drift_check:
+    name: Manual terraform drift detection
+    runs-on: ubuntu-latest
 
-        permissions:
-            id-token: write
-            contents: read
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Terraforn
-              uses: hashicorp/setup-terraform@v3
-              with:
-                terraform_version: "1.8.5"
-                terraform_wrapper: false
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+          terraform_wrapper: false
 
-            - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v4
-              with:
-                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-            - name: Show backend.tf
-              run: cat backend.tf
+      - name: Show backend.tf
+        run: cat backend.tf
 
-            - name: Check tfvars file exists
-              run: ls -la terraform.tfvars
+      - name: Check tfvars file exists
+        run: ls -la terraform.tfvars
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform Formatting
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        run: terraform validate
+
+      
+      - name: Terraform plan
+        id: tf-plan
+        continue-on-error: true
+        run: terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color
+
+      
+      - name: Terraform plan string summary
+        id: tf-plan-string
+        run: |
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "## Terraform Drift Detection Report" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "**Repository:** $GITHUB_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "**Run:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Terraform Plan Output" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      
+      - name: 📝 Publish Terraform Plan to Task Summary
+        env:
+          SUMMARY: ${{ steps.tf-plan-string.outputs.summary }}
+        run: |
+          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+      
+      - name: 🚨 Publish Drift Report and create new issue
+        if: steps.tf-plan.outcome == 'failure'
+        uses: actions/github-script@v8
+        env:
+          SUMMARY: "${{ steps.tf-plan-string.outputs.summary }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = `${process.env.SUMMARY}`;
+            const title = 'Terraform Configuration Drift Detected';
+            const creator = 'github-actions[bot]'
+
+            // Look to see if there is an existing drift issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            })
+
+            const driftIssues = issues.data.filter(
+              (i) => i.title === title && i.user.login === creator
+            )
+
+            if( driftIssues.length > 0 ) {
+              const issue = driftIssues[0]
+
+              if ( issue.body == body ) {
+                console.log('Drift Detected: Found matching issue with duplicate content')
+              } else {
+                console.log('Drift Detected: Found matching issue, updating body')
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: body
+                })
+              }
+            } else {
+              console.log('Drift Detected: Creating new issue')
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body
+              })
+            }
+
+      - name: ✅ Publish Drift Report
+        if: steps.tf-plan.outcome == 'success'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const title = 'Terraform Configuration Drift Detected';
+            const creator = 'github-actions[bot]'
+
+            // Look to see if there is an existing drift issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            })
+
+            const driftIssues = issues.data.filter(
+              (i) => i.title === title && i.user.login === creator
+            )
+
+            if( driftIssues.length > 0 ) {
+              const issue = driftIssues[0]
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              })
+            }
+
+      # ✅ Mark the workflow as failed if drift detected (reference style)
+      - name: ❌ Error on Failure
+        if: steps.tf-plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform outputs
+        run: terraform output
 
 
-            - name: Terraform init
-              run: terraform init -input=false
-
-            - name: Terraform Formatting
-              run: terraform fmt
-
-            - name: Terraform validate
-              run: terraform validate
-            
-            - name: Terraform plan
-              run: terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color
-
-            - name: Terraform Outputas
-              run: terraform output
-              
-
-    
 #terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
 #good add more terraform command like output and fmt, apply
