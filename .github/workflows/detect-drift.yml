@@ -17,6 +17,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: DEBUG - show workflow files
+        run: |
+          echo "=== List workflows ==="
+          ls -la .github/workflows
+          echo "=== Search for EOF summary blocks ==="
+          grep -R "summary<<EOF" -n .github/workflows || echo "✅ No summary<<EOF found"
+          echo "=== Search for GITHUB_OUTPUT writes ==="
+          grep -R "GITHUB_OUTPUT" -n .github/workflows || echo "✅ No GITHUB_OUTPUT found"
+
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
