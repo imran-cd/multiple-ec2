@@ -70,24 +70,23 @@ jobs:
       - name: Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # ✅ Run SMURF drift and capture output
+      # ✅ Run SMURF drift and capture clean output (removes ANSI color codes)
       - name: Terraform drift check (Smurf)
         id: drift
         shell: bash
         run: |
-          smurf stf drift | tee drift.txt
+          smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
 
-      # ✅ Detect drift by reading output text (because exit code is always 0)
+      # ✅ Detect drift by parsing output text (because smurf drift always exits 0)
       - name: Detect drift from SMURF output
         id: drift-detect
         shell: bash
         run: |
-          if grep -q "Drift detected" drift.txt; then
+          if grep -q "Drift detected in your infrastructure" drift.txt; then
             echo "drift=true" >> $GITHUB_OUTPUT
           else
             echo "drift=false" >> $GITHUB_OUTPUT
           fi
-          echo "DRIFT_FOUND=$(cat $GITHUB_OUTPUT | tail -1)"
 
       - name: 📝 Publish Drift Output to Task Summary
         shell: bash
@@ -139,6 +138,8 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0];
+              console.log("Drift Detected: Updating existing issue");
+
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -146,6 +147,8 @@ jobs:
                 body,
               });
             } else {
+              console.log("Drift Detected: Creating new issue");
+
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -155,7 +158,7 @@ jobs:
               });
             }
 
-      # ✅ Close Issue if no drift
+      # ✅ Close drift issue if no drift
       - name: ✅ Close Drift Issue if No Changes
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
@@ -177,10 +180,14 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0];
+              console.log("No Drift: Closing drift issue");
+
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
                 state: "closed",
               });
+            } else {
+              console.log("No Drift: No open drift issue found");
             }
