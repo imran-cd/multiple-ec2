@@ -71,14 +71,12 @@ jobs:
       - name: 🎨 Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # ✅ Run SMURF plan and capture output cleanly
       - name: 📡 Terraform Plan (Smurf)
         id: smurf-plan
         shell: bash
         run: |
           smurf stf plan | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee plan.txt
 
-      # ✅ Detect drift from plan output
       - name: Detect drift from SMURF plan output
         id: drift-detect
         shell: bash
@@ -89,7 +87,6 @@ jobs:
             echo "drift=true" >> $GITHUB_OUTPUT
           fi
 
-      # ✅ Upload artifact only when drift exists
       - name: 💾 Upload Plan Report Artifact
         if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
@@ -97,7 +94,6 @@ jobs:
           name: smurf-plan-report
           path: plan.txt
 
-      # ✅ Create summary string output (same UI style)
       - name: 🧵 Create String Output
         id: plan-string
         shell: bash
@@ -167,7 +163,7 @@ jobs:
               })
             }
 
-      - name: ✅ Publish Drift Report (close issue if resolved)
+      - name: Publish Drift Report (close issue if its resolved)
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
