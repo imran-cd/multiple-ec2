@@ -49,7 +49,7 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
-      # ✅ Run plan once, capture drift exitcode, save output
+      
       - name: Terraform plan (drift check)
         id: tf-plan
         continue-on-error: true
@@ -61,7 +61,7 @@ jobs:
           echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
           exit 0
 
-      # ✅ Publish report in GitHub Actions Summary (NO EOF output blocks)
+      
       - name: 📝 Publish Terraform Plan to Task Summary
         shell: bash
         run: |
@@ -74,7 +74,7 @@ jobs:
           cat plan.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      # ✅ If drift detected -> create/update issue
+      
       - name: 🚨 Create/Update Drift Issue
         if: steps.tf-plan.outputs.exitcode == '2'
         uses: actions/github-script@v8
@@ -132,7 +132,7 @@ jobs:
               });
             }
 
-      # ✅ If no drift -> close drift issue
+      
       - name: ✅ Close Drift Issue if No Changes
         if: steps.tf-plan.outputs.exitcode == '0'
         uses: actions/github-script@v8
@@ -169,7 +169,7 @@ jobs:
       - name: Terraform outputs
         run: terraform output
 
-      # ✅ Optional: fail workflow if drift detected
+      
       - name: ❌ Fail job if drift found
         if: steps.tf-plan.outputs.exitcode == '2'
         run: exit 1
