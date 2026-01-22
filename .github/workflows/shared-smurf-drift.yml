@@ -32,6 +32,7 @@ jobs:
   drift_check:
     name: Terraform drift check (SMURF)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     permissions:
       id-token: write
@@ -71,14 +72,20 @@ jobs:
         run: smurf stf fmt --timeout 10s
 
       
-        
       - name: Terraform drift check (Smurf)
         id: drift
         shell: bash
         run: |
           smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
 
-    
+      
+      - name: Upload drift report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smurf-drift-report
+          path: drift.txt
+
+      
 
 
       - name: Detect drift from SMURF output
@@ -161,8 +168,8 @@ jobs:
               });
             }
 
-    
-      - name: ✅ Close Drift Issue if No Changes
+      
+      - name: ✅ Comment and Close Drift Issue if No Changes
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
@@ -183,7 +190,15 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0];
-              console.log("No Drift: Closing drift issue");
+
+              console.log("No Drift: Adding comment and closing issue");
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Drift resolved.\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              });
 
               await github.rest.issues.update({
                 owner: context.repo.owner,
