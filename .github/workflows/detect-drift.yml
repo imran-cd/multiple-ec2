@@ -30,12 +30,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Show backend.tf
-        run: cat backend.tf
-
-      - name: Check tfvars file exists
-        run: ls -la terraform.tfvars
-
       - name: Terraform init
         run: terraform init -input=false
 
@@ -49,121 +43,121 @@ jobs:
       - name: Terraform plan (drift check)
         id: tf-plan
         continue-on-error: true
+        shell: bash
         run: |
+          set +e
           terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color | tee plan.txt
-          echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-
-      
-      - name: Terraform plan string summary
-        id: tf-plan-string
-        run: |
-          {
-            echo "summary<<EOF"
-            echo "## Terraform Drift Detection Report"
-            echo ""
-            echo "**Repository:** $GITHUB_REPOSITORY"
-            echo "**Run:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo ""
-            echo "### Terraform Plan Output"
-            echo '```'
-            cat plan.txt
-            echo '```'
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          exitcode=${PIPESTATUS[0]}
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+          exit 0
 
       
       - name: 📝 Publish Terraform Plan to Task Summary
-        env:
-          SUMMARY: ${{ steps.tf-plan-string.outputs.summary }}
+        shell: bash
         run: |
-          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Drift Detection Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Exit Code:** ${{ steps.tf-plan.outputs.exitcode }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform Plan Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat plan.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       
-      - name: 🚨 Publish Drift Report and create/update issue
+      - name: 🚨 Create/Update Drift Issue
         if: steps.tf-plan.outputs.exitcode == '2'
         uses: actions/github-script@v8
-        env:
-          SUMMARY: "${{ steps.tf-plan-string.outputs.summary }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const body = `${process.env.SUMMARY}`;
-            const title = 'Terraform Configuration Drift Detected';
-            const creator = 'github-actions[bot]'
+            const fs = require("fs");
 
-            // Look to see if there is an existing drift issue
+            const title = "Terraform Configuration Drift Detected";
+            const creator = "github-actions[bot]";
+            const plan = fs.readFileSync("plan.txt", "utf8");
+
+            const body = `
+            🚨 **Terraform Drift Detected**
+
+            **Repository:** ${context.repo.owner}/${context.repo.repo}
+            **Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+
+            ---
+            ### Terraform Plan Output
+            \`\`\`
+            ${plan.substring(0, 65000)}
+            \`\`\`
+            `;
+
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open'
-            })
+              state: "open",
+            });
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
-            )
+            );
 
             if (driftIssues.length > 0) {
-              const issue = driftIssues[0]
+              const issue = driftIssues[0];
 
-              if (issue.body == body) {
-                console.log('Drift Detected: Found matching issue with duplicate content')
+              if (issue.body === body) {
+                console.log("Drift issue already exists with same content");
               } else {
-                console.log('Drift Detected: Found matching issue, updating body')
+                console.log("Updating existing drift issue");
                 await github.rest.issues.update({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: body
-                })
+                  body: body,
+                });
               }
             } else {
-              console.log('Drift Detected: Creating new issue')
-
+              console.log("Creating new drift issue");
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: title,
                 body: body,
-                labels: ['terraform', 'drift']
-              })
+                labels: ["terraform", "drift"],
+              });
             }
 
       
-      - name: ✅ Publish Drift Report (close issue if exists)
+      - name: Close Drift Issue if No Changes
         if: steps.tf-plan.outputs.exitcode == '0'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const title = 'Terraform Configuration Drift Detected';
-            const creator = 'github-actions[bot]'
+            const title = "Terraform Configuration Drift Detected";
+            const creator = "github-actions[bot]";
 
-            // Look to see if there is an existing drift issue
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open'
-            })
+              state: "open",
+            });
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
-            )
+            );
 
             if (driftIssues.length > 0) {
-              const issue = driftIssues[0]
-
+              console.log("Closing drift issue");
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: issue.number,
-                state: 'closed'
-              })
+                issue_number: driftIssues[0].number,
+                state: "closed",
+              });
+            } else {
+              console.log("No open drift issue found");
             }
 
-      - name: Terraform outputs
-        run: terraform output
-
       
-      - name: ❌ Error on Failure
+      - name: ❌ Fail job if drift found
         if: steps.tf-plan.outputs.exitcode == '2'
         run: exit 1
