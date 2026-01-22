@@ -46,26 +46,30 @@ jobs:
         run: terraform validate
 
       
-      - name: Terraform plan
+      - name: Terraform plan (drift check)
         id: tf-plan
         continue-on-error: true
-        run: terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color
+        run: |
+          terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color | tee plan.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       
       - name: Terraform plan string summary
         id: tf-plan-string
         run: |
-          echo "summary<<EOF" >> $GITHUB_OUTPUT
-          echo "## Terraform Drift Detection Report" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "**Repository:** $GITHUB_REPOSITORY" >> $GITHUB_OUTPUT
-          echo "**Run:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "### Terraform Plan Output" >> $GITHUB_OUTPUT
-          echo '```' >> $GITHUB_OUTPUT
-          terraform plan -var="create_private_key_file=false" -detailed-exitcode -no-color >> $GITHUB_OUTPUT
-          echo '```' >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "summary<<EOF"
+            echo "## Terraform Drift Detection Report"
+            echo ""
+            echo "**Repository:** $GITHUB_REPOSITORY"
+            echo "**Run:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo ""
+            echo "### Terraform Plan Output"
+            echo '```'
+            cat plan.txt
+            echo '```'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       
       - name: 📝 Publish Terraform Plan to Task Summary
@@ -75,8 +79,8 @@ jobs:
           echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
 
       
-      - name: 🚨 Publish Drift Report and create new issue
-        if: steps.tf-plan.outcome == 'failure'
+      - name: 🚨 Publish Drift Report and create/update issue
+        if: steps.tf-plan.outputs.exitcode == '2'
         uses: actions/github-script@v8
         env:
           SUMMARY: "${{ steps.tf-plan-string.outputs.summary }}"
@@ -91,17 +95,17 @@ jobs:
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
+              state: 'open'
             })
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
             )
 
-            if( driftIssues.length > 0 ) {
+            if (driftIssues.length > 0) {
               const issue = driftIssues[0]
 
-              if ( issue.body == body ) {
+              if (issue.body == body) {
                 console.log('Drift Detected: Found matching issue with duplicate content')
               } else {
                 console.log('Drift Detected: Found matching issue, updating body')
@@ -119,12 +123,14 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: title,
-                body: body
+                body: body,
+                labels: ['terraform', 'drift']
               })
             }
 
-      - name: ✅ Publish Drift Report
-        if: steps.tf-plan.outcome == 'success'
+      
+      - name: ✅ Publish Drift Report (close issue if exists)
+        if: steps.tf-plan.outputs.exitcode == '0'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -136,14 +142,14 @@ jobs:
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
+              state: 'open'
             })
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
             )
 
-            if( driftIssues.length > 0 ) {
+            if (driftIssues.length > 0) {
               const issue = driftIssues[0]
 
               await github.rest.issues.update({
@@ -154,14 +160,10 @@ jobs:
               })
             }
 
-      # ✅ Mark the workflow as failed if drift detected (reference style)
-      - name: ❌ Error on Failure
-        if: steps.tf-plan.outcome == 'failure'
-        run: exit 1
-
       - name: Terraform outputs
         run: terraform output
 
-
-#terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
-#good add more terraform command like output and fmt, apply
+      
+      - name: ❌ Error on Failure
+        if: steps.tf-plan.outputs.exitcode == '2'
+        run: exit 1
