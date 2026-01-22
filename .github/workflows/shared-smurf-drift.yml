@@ -1,93 +1,204 @@
 name: "Terraform Check drift Using Smurf"
 
 on:
-    workflow_call:
-      inputs:
-        smurf_version:
-          required: false
-          default: "latest"
-          type: string
-        
-        terraform_version:
-          required: false
-          default: "1.8.5"
-          type: string
+  workflow_call:
+    inputs:
+      smurf_version:
+        required: false
+        default: "latest"
+        type: string
 
-        working_directory:
-          required: false
-          type: string
-          default: "."
+      terraform_version:
+        required: false
+        default: "1.8.5"
+        type: string
 
-        aws_region:
-          required: true
-          type: string
-        
-      secrets:
-        AWS_ACCESS_KEY_ID:
-          required: true
+      working_directory:
+        required: false
+        type: string
+        default: "."
 
-        AWS_SECRET_ACCESS_KEY:
-          required: true
+      aws_region:
+        required: true
+        type: string
 
-        
-
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
 
 jobs:
-    drift_check:
-        name: Terraform drift check
-        runs-on: ubuntu-latest
+  drift_check:
+    name: Terraform drift check
+    runs-on: ubuntu-latest
 
-        permissions:
-            id-token: write
-            contents: read
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
 
-        steps:
-            - name: Install Smurf
-              uses: clouddrove/smurf@master
-              with:
-                version: latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
 
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Terraforn
-              uses: hashicorp/setup-terraform@v3
-              with:
-                terraform_version: "1.8.5"
-                terraform_wrapper: false
+      - name: Install Smurf
+        uses: clouddrove/smurf@master
+        with:
+          version: ${{ inputs.smurf_version }}
 
-            - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v4
-              with:
-                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                aws-region: ${{ inputs.aws_region }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
 
+      - name: Show backend.tf
+        run: cat backend.tf
 
+      - name: Check tfvars file exists
+        run: ls -la terraform.tfvars
 
+      - name: Terraform init (Smurf)
+        run: smurf stf init
 
+      - name: Terraform fmt (Smurf)
+        run: smurf stf fmt --timeout 10s
 
+      
+      - name: Terraform plan (Smurf drift check)
+        id: tf-plan
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          smurf stf plan -var="create_private_key_file=false" -detailed-exitcode -no-color | tee plan.txt
+          exitcode=${PIPESTATUS[0]}
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+          exit 0
 
+      - name: 📝 Publish Terraform Plan to Task Summary
+        shell: bash
+        run: |
+          echo "## Terraform Drift Detection Report (SMURF)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Exit Code:** ${{ steps.tf-plan.outputs.exitcode }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform Plan Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat plan.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
+      
+      - name: 🚨 Create/Update Drift Issue
+        if: steps.tf-plan.outputs.exitcode == '2'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
 
+            const title = "Terraform Configuration Drift Detected (SMURF)";
+            const creator = "github-actions[bot]";
+            const plan = fs.readFileSync("plan.txt", "utf8");
 
-            - name: Show backend.tf
-              run: cat backend.tf
+            const body = `
+            🚨 **Terraform Drift Detected Using SMURF**
 
-            - name: Check tfvars file exists
-              run: ls -la terraform.tfvars
+            **Repository:** ${context.repo.owner}/${context.repo.repo}
+            **Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
 
+            ---
+            ### Terraform Plan Output
+            \`\`\`
+            ${plan.substring(0, 65000)}
+            \`\`\`
+            `;
 
-            - name: Terraform init
-              run: smurf stf init
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+            });
 
-            - name: Terraform Formatting
-              run: smurf stf fmt --timeout 10s
+            const driftIssues = issues.data.filter(
+              (i) => i.title === title && i.user.login === creator
+            );
 
-            - name: Terraform Drift using Smurf
-              run: smurf stf drift
-              
+            if (driftIssues.length > 0) {
+              const issue = driftIssues[0];
+              console.log("Drift Detected: Updating existing issue");
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: body,
+              });
+            } else {
+              console.log("Drift Detected: Creating new issue");
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ["terraform", "drift"],
+              });
+            }
+
+      
+      - name: ✅ Close Drift Issue if No Changes
+        if: steps.tf-plan.outputs.exitcode == '0'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const title = "Terraform Configuration Drift Detected (SMURF)";
+            const creator = "github-actions[bot]";
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+            });
+
+            const driftIssues = issues.data.filter(
+              (i) => i.title === title && i.user.login === creator
+            );
+
+            if (driftIssues.length > 0) {
+              const issue = driftIssues[0];
+              console.log("No Drift: Closing drift issue");
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+              });
+            } else {
+              console.log("No Drift: No open drift issue found");
+            }
+
+      
+      - name: ❌ Fail job if drift found
+        if: steps.tf-plan.outputs.exitcode == '2'
+        run: exit 1
+
 
     
 #terraform plan -var-file="terraform.tfvars" -detailed-exitcode -no-color
+
+
