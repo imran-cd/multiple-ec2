@@ -30,7 +30,7 @@ on:
 
 jobs:
   drift_check:
-    name: Terraform drift check (SMURF)
+    name: Terraform drift check (SMURF PLAN)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -71,68 +71,68 @@ jobs:
       - name: 🎨 Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-     
-      - name: 📡 Terraform Drift (Smurf)
+      # ✅ Run SMURF plan and capture output cleanly
+      - name: 📡 Terraform Plan (Smurf)
+        id: smurf-plan
+        shell: bash
         run: |
-          smurf stf plan >> drift.txt
+          smurf stf plan | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee plan.txt
 
-      
-      - name: Detect drift from SMURF output
+      # ✅ Detect drift from plan output
+      - name: Detect drift from SMURF plan output
         id: drift-detect
         shell: bash
         run: |
-          if grep -Eq "\[(update|create|delete|replace)\]" drift.txt; then
-            echo "drift=true" >> $GITHUB_OUTPUT
-          else
+          if grep -q "No changes. Your infrastructure matches the configuration." plan.txt; then
             echo "drift=false" >> $GITHUB_OUTPUT
+          else
+            echo "drift=true" >> $GITHUB_OUTPUT
           fi
 
-      
-      - name: 💾 Upload Drift Report Artifact
+      # ✅ Upload artifact only when drift exists
+      - name: 💾 Upload Plan Report Artifact
         if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: smurf-drift-report
-          path: drift.txt
+          name: smurf-plan-report
+          path: plan.txt
 
-      
-      # - name: 🧵 Create String Output
-      #   id: drift-string
-      #   shell: bash
-      #   run: |
-      #     DRIFT_OUTPUT="$(cat drift.txt)"
-      #     delimiter="$(openssl rand -hex 8)"
+      # ✅ Create summary string output (same UI style)
+      - name: 🧵 Create String Output
+        id: plan-string
+        shell: bash
+        run: |
+          PLAN_OUTPUT="$(cat plan.txt)"
+          delimiter="$(openssl rand -hex 8)"
 
-      #     echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
-      #     echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
-      #     echo "### Working Directory: \`${{ inputs.working_directory }}\`" >> $GITHUB_OUTPUT
-      #     echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
-      #     echo "" >> $GITHUB_OUTPUT
-      #     echo '```terraform' >> $GITHUB_OUTPUT
-      #     echo "$DRIFT_OUTPUT" >> $GITHUB_OUTPUT
-      #     echo '```' >> $GITHUB_OUTPUT
-      #     echo "" >> $GITHUB_OUTPUT
-      #     echo "</details>" >> $GITHUB_OUTPUT
-      #     echo "${delimiter}" >> $GITHUB_OUTPUT
+          echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+          echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
+          echo "### Working Directory: \`${{ inputs.working_directory }}\`" >> $GITHUB_OUTPUT
+          echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo '```terraform' >> $GITHUB_OUTPUT
+          echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "</details>" >> $GITHUB_OUTPUT
+          echo "${delimiter}" >> $GITHUB_OUTPUT
 
-      
       - name: 📝 Publish Terraform Plan to Task Summary
         env:
-          SUMMARY: ${{ steps.drift-string.outputs.summary }}
+          SUMMARY: ${{ steps.plan-string.outputs.summary }}
         run: |
           echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
 
-      
       - name: 🚨 Publish Drift Report and create/update issue
         if: steps.drift-detect.outputs.drift == 'true'
         uses: actions/github-script@v8
         env:
-          SUMMARY: "${{ steps.drift-string.outputs.summary }}"
+          SUMMARY: "${{ steps.plan-string.outputs.summary }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const body = `${process.env.SUMMARY}`;
-            const title = 'Terraform Configuration Drift Detected (SMURF)';
+            const title = 'Terraform Configuration Drift Detected (SMURF PLAN)';
             const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
@@ -167,14 +167,13 @@ jobs:
               })
             }
 
-     
       - name: ✅ Publish Drift Report (close issue if resolved)
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const title = 'Terraform Configuration Drift Detected (SMURF)';
+            const title = 'Terraform Configuration Drift Detected (SMURF PLAN)';
             const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
