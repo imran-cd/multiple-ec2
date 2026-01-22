@@ -71,7 +71,7 @@ jobs:
       - name: 🎨 Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # ✅ Run SMURF drift and capture clean output
+      # ✅ Run SMURF drift and capture output (remove ANSI colors)
       - name: 📡 Terraform Drift (Smurf)
         id: smurf-drift
         shell: bash
@@ -89,7 +89,7 @@ jobs:
             echo "drift=false" >> $GITHUB_OUTPUT
           fi
 
-      # ✅ Upload artifact ONLY when drift exists
+      # ✅ Upload artifact only if drift exists
       - name: 💾 Upload Drift Report Artifact
         if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
@@ -97,7 +97,7 @@ jobs:
           name: smurf-drift-report
           path: drift.txt
 
-      # ✅ Create string output like your reference (random delimiter)
+      # ✅ Create EXACT summary output (same UI as CloudDrove reference)
       - name: 🧵 Create String Output
         id: drift-string
         shell: bash
@@ -113,17 +113,18 @@ jobs:
           echo '```terraform' >> $GITHUB_OUTPUT
           echo "$DRIFT_OUTPUT" >> $GITHUB_OUTPUT
           echo '```' >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
           echo "</details>" >> $GITHUB_OUTPUT
           echo "${delimiter}" >> $GITHUB_OUTPUT
 
-      # ✅ Publish report to GitHub Summary (same as reference)
+      # ✅ Publish summary to GitHub Actions Summary tab
       - name: 📝 Publish Terraform Plan to Task Summary
         env:
           SUMMARY: ${{ steps.drift-string.outputs.summary }}
         run: |
           echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
 
-      # ✅ Create/Update issue if drift detected (same as reference)
+      # ✅ If drift detected -> create/update issue (uses EXACT same summary)
       - name: 🚨 Publish Drift Report and create/update issue
         if: steps.drift-detect.outputs.drift == 'true'
         uses: actions/github-script@v8
@@ -133,7 +134,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const body = `${process.env.SUMMARY}`;
-            const title = 'Terraform Configuration Drift Detected';
+            const title = 'Terraform Configuration Drift Detected (SMURF)';
             const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
@@ -148,36 +149,34 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0]
+              console.log('Drift Detected: Updating existing issue')
 
-              if (issue.body == body) {
-                console.log('Drift Detected: Found matching issue with duplicate content')
-              } else {
-                console.log('Drift Detected: Found matching issue, updating body')
-                await github.rest.issues.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  body: body
-                })
-              }
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: body
+              })
             } else {
               console.log('Drift Detected: Creating new issue')
+
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: title,
-                body: body
+                body: body,
+                labels: ['terraform', 'drift']
               })
             }
 
-      # ✅ If no drift, close any open drift issue (same style)
+      # ✅ If no drift -> close open drift issue
       - name: ✅ Publish Drift Report (close issue if resolved)
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const title = 'Terraform Configuration Drift Detected';
+            const title = 'Terraform Configuration Drift Detected (SMURF)';
             const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
@@ -192,6 +191,8 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0]
+
+              console.log('No Drift: Closing drift issue')
 
               await github.rest.issues.update({
                 owner: context.repo.owner,
