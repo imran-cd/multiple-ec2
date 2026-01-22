@@ -44,7 +44,7 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
       - name: Install Smurf
@@ -52,158 +52,151 @@ jobs:
         with:
           version: ${{ inputs.smurf_version }}
 
-      - name: Setup Terraform
+      - name: ⚙️ Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
           terraform_wrapper: false
 
-      - name: Configure AWS Credentials
+      - name: ☁️ Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
 
-      - name: Terraform init (Smurf)
+      - name: 🚀 Terraform init (Smurf)
         run: smurf stf init
 
-      - name: Terraform fmt (Smurf)
+      - name: 🎨 Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # --- Drift check ---
-      - name: Terraform drift check (Smurf)
+      # ✅ Run SMURF drift and capture clean output
+      - name: 📡 Terraform Drift (Smurf)
+        id: smurf-drift
         shell: bash
         run: |
           smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
 
-      # --- Detect real drift ---
+      # ✅ Detect drift (true only when update/create/delete/replace exists)
       - name: Detect drift from SMURF output
         id: drift-detect
         shell: bash
         run: |
           if grep -Eq "\[(update|create|delete|replace)\]" drift.txt; then
             echo "drift=true" >> $GITHUB_OUTPUT
-            echo "✅ Drift Found"
           else
             echo "drift=false" >> $GITHUB_OUTPUT
-            echo "✅ No Drift Found"
           fi
 
-      # --- Upload artifact only when drift exists ---
-      - name: Upload drift report artifact
+      # ✅ Upload artifact ONLY when drift exists
+      - name: 💾 Upload Drift Report Artifact
         if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: smurf-drift-report
           path: drift.txt
 
-      # --- GitHub summary ---
-      - name: 📝 Publish Drift Output to Task Summary
+      # ✅ Create string output like your reference (random delimiter)
+      - name: 🧵 Create String Output
+        id: drift-string
         shell: bash
         run: |
-          echo "## Terraform Drift Detection Report (SMURF)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Drift Found:** ${{ steps.drift-detect.outputs.drift }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### SMURF Drift Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat drift.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          DRIFT_OUTPUT="$(cat drift.txt)"
+          delimiter="$(openssl rand -hex 8)"
 
-      # --- Create / Update issue (formatted like Terraform Plan Output) ---
-      - name: 🚨 Create / Update Drift Issue
+          echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+          echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
+          echo "### Working Directory: \`${{ inputs.working_directory }}\`" >> $GITHUB_OUTPUT
+          echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo '```terraform' >> $GITHUB_OUTPUT
+          echo "$DRIFT_OUTPUT" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "</details>" >> $GITHUB_OUTPUT
+          echo "${delimiter}" >> $GITHUB_OUTPUT
+
+      # ✅ Publish report to GitHub Summary (same as reference)
+      - name: 📝 Publish Terraform Plan to Task Summary
+        env:
+          SUMMARY: ${{ steps.drift-string.outputs.summary }}
+        run: |
+          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+      # ✅ Create/Update issue if drift detected (same as reference)
+      - name: 🚨 Publish Drift Report and create/update issue
         if: steps.drift-detect.outputs.drift == 'true'
         uses: actions/github-script@v8
         env:
-          WORKING_DIR: ${{ inputs.working_directory }}
+          SUMMARY: "${{ steps.drift-string.outputs.summary }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require("fs");
-
-            const title = "Terraform Configuration Drift Detected";
-            const creator = "github-actions[bot]";
-            const output = fs.readFileSync("drift.txt", "utf8");
-
-            const body = `
-            ## 🚨 Terraform Configuration Drift Detected
-
-            **Repository:** ${context.repo.owner}/${context.repo.repo}  
-            **Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}  
-            **Working Directory:** \`${process.env.WORKING_DIR}\`
-
-            <details>
-            <summary><b>▶ Terraform Plan Output</b></summary>
-
-            \`\`\`
-            ${output.substring(0, 65000)}
-            \`\`\`
-
-            </details>
-            `;
+            const body = `${process.env.SUMMARY}`;
+            const title = 'Terraform Configuration Drift Detected';
+            const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: "open",
-            });
+              state: 'open'
+            })
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
-            );
+            )
 
             if (driftIssues.length > 0) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: driftIssues[0].number,
-                body,
-              });
+              const issue = driftIssues[0]
+
+              if (issue.body == body) {
+                console.log('Drift Detected: Found matching issue with duplicate content')
+              } else {
+                console.log('Drift Detected: Found matching issue, updating body')
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: body
+                })
+              }
             } else {
+              console.log('Drift Detected: Creating new issue')
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title,
-                body,
-                labels: ["terraform", "drift"],
-              });
+                title: title,
+                body: body
+              })
             }
 
-      # --- Comment & close issue when drift resolved ---
-      - name: ✅ Comment and Close Drift Issue if No Changes
+      # ✅ If no drift, close any open drift issue (same style)
+      - name: ✅ Publish Drift Report (close issue if resolved)
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const title = "Terraform Configuration Drift Detected";
-            const creator = "github-actions[bot]";
+            const title = 'Terraform Configuration Drift Detected';
+            const creator = 'github-actions[bot]'
 
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: "open",
-            });
+              state: 'open'
+            })
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
-            );
+            )
 
             if (driftIssues.length > 0) {
-              const issue = driftIssues[0];
-
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `✅ **Drift resolved**.\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-              });
+              const issue = driftIssues[0]
 
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                state: "closed",
-              });
+                state: 'closed'
+              })
             }
