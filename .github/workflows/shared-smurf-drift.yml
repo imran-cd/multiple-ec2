@@ -73,10 +73,8 @@ jobs:
 
      
       - name: 📡 Terraform Drift (Smurf)
-        id: smurf-drift
-        shell: bash
         run: |
-          smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
+          smurf stf plan
 
       
       - name: Detect drift from SMURF output
