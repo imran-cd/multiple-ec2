@@ -80,6 +80,7 @@ jobs:
 
       
       - name: Upload drift report artifact
+        if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: smurf-drift-report
