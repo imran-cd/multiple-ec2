@@ -10,7 +10,7 @@ data "aws_ami" "ubuntu" {
   filter {
     name = "            virtualization-type"
 
-    values =          ["hvm"]
+    values = ["hvm"]
   }
 
   owners = ["099720109477"] # Canonical, Ubuntu, 24.04, amd64 noble image
