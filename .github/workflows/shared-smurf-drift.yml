@@ -78,17 +78,6 @@ jobs:
         run: |
           smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
 
-      
-      - name: Upload drift report artifact
-        if: ${{ steps.drift-detect.outputs.drift == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: smurf-drift-report
-          path: drift.txt
-
-      
-
-
       - name: Detect drift from SMURF output
         id: drift-detect
         shell: bash
@@ -100,6 +89,20 @@ jobs:
             echo "drift=false" >> $GITHUB_OUTPUT
             echo "✅ No Drift Found"
           fi
+
+
+      
+      - name: Upload drift report artifact
+        if: ${{ steps.drift-detect.outputs.drift == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smurf-drift-report
+          path: drift.txt
+
+      
+
+
+
 
       - name: 📝 Publish Drift Output to Task Summary
         shell: bash
