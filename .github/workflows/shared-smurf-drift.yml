@@ -71,14 +71,14 @@ jobs:
       - name: 🎨 Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # ✅ Run SMURF drift and capture output (remove ANSI colors)
+     
       - name: 📡 Terraform Drift (Smurf)
         id: smurf-drift
         shell: bash
         run: |
           smurf stf drift | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee drift.txt
 
-      # ✅ Detect drift (true only when update/create/delete/replace exists)
+      
       - name: Detect drift from SMURF output
         id: drift-detect
         shell: bash
@@ -89,7 +89,7 @@ jobs:
             echo "drift=false" >> $GITHUB_OUTPUT
           fi
 
-      # ✅ Upload artifact only if drift exists
+      
       - name: 💾 Upload Drift Report Artifact
         if: ${{ steps.drift-detect.outputs.drift == 'true' }}
         uses: actions/upload-artifact@v4
@@ -97,7 +97,7 @@ jobs:
           name: smurf-drift-report
           path: drift.txt
 
-      # ✅ Create EXACT summary output (same UI as CloudDrove reference)
+      
       - name: 🧵 Create String Output
         id: drift-string
         shell: bash
@@ -117,14 +117,14 @@ jobs:
           echo "</details>" >> $GITHUB_OUTPUT
           echo "${delimiter}" >> $GITHUB_OUTPUT
 
-      # ✅ Publish summary to GitHub Actions Summary tab
+      
       - name: 📝 Publish Terraform Plan to Task Summary
         env:
           SUMMARY: ${{ steps.drift-string.outputs.summary }}
         run: |
           echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
 
-      # ✅ If drift detected -> create/update issue (uses EXACT same summary)
+      
       - name: 🚨 Publish Drift Report and create/update issue
         if: steps.drift-detect.outputs.drift == 'true'
         uses: actions/github-script@v8
@@ -169,7 +169,7 @@ jobs:
               })
             }
 
-      # ✅ If no drift -> close open drift issue
+     
       - name: ✅ Publish Drift Report (close issue if resolved)
         if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
