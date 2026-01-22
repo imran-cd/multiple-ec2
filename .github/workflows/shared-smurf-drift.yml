@@ -74,7 +74,7 @@ jobs:
      
       - name: 📡 Terraform Drift (Smurf)
         run: |
-          smurf stf plan
+          smurf stf plan >> drift.txt
 
       
       - name: Detect drift from SMURF output
@@ -96,24 +96,24 @@ jobs:
           path: drift.txt
 
       
-      - name: 🧵 Create String Output
-        id: drift-string
-        shell: bash
-        run: |
-          DRIFT_OUTPUT="$(cat drift.txt)"
-          delimiter="$(openssl rand -hex 8)"
+      # - name: 🧵 Create String Output
+      #   id: drift-string
+      #   shell: bash
+      #   run: |
+      #     DRIFT_OUTPUT="$(cat drift.txt)"
+      #     delimiter="$(openssl rand -hex 8)"
 
-          echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
-          echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
-          echo "### Working Directory: \`${{ inputs.working_directory }}\`" >> $GITHUB_OUTPUT
-          echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo '```terraform' >> $GITHUB_OUTPUT
-          echo "$DRIFT_OUTPUT" >> $GITHUB_OUTPUT
-          echo '```' >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "</details>" >> $GITHUB_OUTPUT
-          echo "${delimiter}" >> $GITHUB_OUTPUT
+      #     echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+      #     echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
+      #     echo "### Working Directory: \`${{ inputs.working_directory }}\`" >> $GITHUB_OUTPUT
+      #     echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+      #     echo "" >> $GITHUB_OUTPUT
+      #     echo '```terraform' >> $GITHUB_OUTPUT
+      #     echo "$DRIFT_OUTPUT" >> $GITHUB_OUTPUT
+      #     echo '```' >> $GITHUB_OUTPUT
+      #     echo "" >> $GITHUB_OUTPUT
+      #     echo "</details>" >> $GITHUB_OUTPUT
+      #     echo "${delimiter}" >> $GITHUB_OUTPUT
 
       
       - name: 📝 Publish Terraform Plan to Task Summary
