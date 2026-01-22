@@ -1,10 +1,11 @@
-name:  TF-Drift Calling workflow Using Smurf
+name:  "TF-Drift Calling workflow Using Smurf"
 on:
     workflow_dispatch:
 
 permissions:
     id-token: write
     contents: read
+    issues: write
 
 
 jobs:
