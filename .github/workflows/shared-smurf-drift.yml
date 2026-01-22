@@ -70,36 +70,40 @@ jobs:
       - name: Terraform fmt (Smurf)
         run: smurf stf fmt --timeout 10s
 
-      # ✅ SMURF Drift check + capture exit code + output
+      # ✅ Run SMURF drift and capture output
       - name: Terraform drift check (Smurf)
         id: drift
-        continue-on-error: true
         shell: bash
         run: |
-          set +e
           smurf stf drift | tee drift.txt
-          exitcode=${PIPESTATUS[0]}
-          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
-          echo "SMURF DRIFT EXIT CODE = $exitcode"
-          exit 0
 
-      # ✅ Publish drift output to summary
+      # ✅ Detect drift by reading output text (because exit code is always 0)
+      - name: Detect drift from SMURF output
+        id: drift-detect
+        shell: bash
+        run: |
+          if grep -q "Drift detected" drift.txt; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+          fi
+          echo "DRIFT_FOUND=$(cat $GITHUB_OUTPUT | tail -1)"
+
       - name: 📝 Publish Drift Output to Task Summary
         shell: bash
         run: |
           echo "## Terraform Drift Detection Report (SMURF)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**SMURF Drift Exit Code:** ${{ steps.drift.outputs.exitcode }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Drift Found:** ${{ steps.drift-detect.outputs.drift }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### SMURF Drift Output" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat drift.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      # ✅ Create/Update Issue if drift exitcode is NON-ZERO
-      # (After you test behavior, we can make it ==2 if SMURF follows terraform detailed exit codes)
+      # ✅ Create/Update Issue if drift detected
       - name: 🚨 Create/Update Drift Issue
-        if: steps.drift.outputs.exitcode != '0'
+        if: steps.drift-detect.outputs.drift == 'true'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -135,29 +139,25 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0];
-              console.log("Drift Detected: Updating existing issue");
-
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: body,
+                body,
               });
             } else {
-              console.log("Drift Detected: Creating new issue");
-
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: title,
-                body: body,
+                title,
+                body,
                 labels: ["terraform", "drift"],
               });
             }
 
-      # ✅ Close drift issue if drift exitcode is ZERO
+      # ✅ Close Issue if no drift
       - name: ✅ Close Drift Issue if No Changes
-        if: steps.drift.outputs.exitcode == '0'
+        if: steps.drift-detect.outputs.drift == 'false'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -177,14 +177,10 @@ jobs:
 
             if (driftIssues.length > 0) {
               const issue = driftIssues[0];
-              console.log("No Drift: Closing drift issue");
-
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
                 state: "closed",
               });
-            } else {
-              console.log("No Drift: No open drift issue found");
             }
