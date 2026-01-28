@@ -275,26 +275,29 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const title = 'Terraform Configuration Drift Detected (SMURF PLAN)';
-            const creator = 'github-actions[bot]'
+            const creator = 'github-actions[bot]';
 
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open'
-            })
+            });
 
             const driftIssues = issues.data.filter(
               (i) => i.title === title && i.user.login === creator
-            )
+            );
 
             if (driftIssues.length > 0) {
-              const issue = driftIssues[0]
+              const issue = driftIssues[0];
 
-              console.log('No Drift: Closing drift issue')
+              console.log('No Drift: Closing drift issue');
 
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
                 state: 'closed'
-              })
+              });
+            }
+
+        
