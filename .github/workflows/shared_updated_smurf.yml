@@ -57,13 +57,8 @@ jobs:
         with:
           version: ${{ inputs.smurf_version }}
 
-      - name: ⚙️ Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ inputs.terraform_version }}
-          terraform_wrapper: false
 
-      # ---------- AUTH BLOCKS (unchanged logic) ----------
+      # ---------- AUTH BLOCKS  ----------
 
       - name: AWS Auth
         if: ${{ inputs.provider == 'aws' }}
