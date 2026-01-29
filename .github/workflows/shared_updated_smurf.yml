@@ -1,0 +1,204 @@
+name: '📡 Terraform Configuration Drift Detection (SMURF)'
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: true
+        type: string
+        description: 'Terraform root directory'
+      provider:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        type: string
+        default: us-east-1
+      terraform_version:
+        type: string
+        default: 1.8.5
+      smurf_version:
+        type: string
+        default: latest
+
+    secrets:
+      AZURE_CREDENTIALS:
+        required: false
+      aws_access_key_id:
+        required: false
+      aws_secret_access_key:
+        required: false
+      GCP_CREDENTIALS:
+        required: false
+      WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      SERVICE_ACCOUNT:
+        required: false
+      GITHUB:
+        required: true
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+
+    steps:
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Smurf
+        uses: clouddrove/smurf@master
+        with:
+          version: ${{ inputs.smurf_version }}
+
+      - name: ⚙️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      # ---------- AUTH BLOCKS (unchanged logic) ----------
+
+      - name: AWS Auth
+        if: ${{ inputs.provider == 'aws' }}
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Azure Auth
+        if: ${{ inputs.provider == 'azurerm' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: GCP Auth
+        if: ${{ inputs.provider == 'gcp' }}
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      # ---------- SMURF EXECUTION ----------
+
+      - name: 🚀 Smurf Init
+        working-directory: ${{ inputs.working_directory }}
+        run: smurf stf init
+
+      - name: 🎨 Smurf Fmt
+        working-directory: ${{ inputs.working_directory }}
+        run: smurf stf fmt --timeout 10s
+
+      - name: 📐 Smurf Plan
+        id: smurf-plan
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          smurf stf plan | sed -r "s/\x1B\[[0-9;]*[mK]//g" | tee plan.txt
+
+      # ---------- DRIFT DETECTION ----------
+
+      - name: Detect Drift
+        id: drift-detect
+        run: |
+          if grep -q "No changes. Your infrastructure matches the configuration." ${{ inputs.working_directory }}/plan.txt; then
+            echo "exitcode=0" >> $GITHUB_OUTPUT
+          else
+            echo "exitcode=2" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------- SUMMARY OUTPUT ----------
+
+      - name: Create Plan Summary
+        id: plan-string
+        run: |
+          PLAN=$(cat ${{ inputs.working_directory }}/plan.txt)
+          delimiter="$(openssl rand -hex 8)"
+
+          echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+          echo "## Terraform Plan Output (SMURF)" >> $GITHUB_OUTPUT
+          echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+          echo '```terraform' >> $GITHUB_OUTPUT
+          echo "$PLAN" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "</details>" >> $GITHUB_OUTPUT
+          echo "${delimiter}" >> $GITHUB_OUTPUT
+
+      - name: 📝 Publish Summary
+        env:
+          SUMMARY: ${{ steps.plan-string.outputs.summary }}
+        run: echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+      # ---------- ISSUE CREATION ----------
+
+      - name: 🚨 Create / Update Drift Issue
+        if: steps.drift-detect.outputs.exitcode == '2'
+        uses: actions/github-script@v8
+        env:
+          SUMMARY: "${{ steps.plan-string.outputs.summary }}"
+        with:
+          github-token: ${{ secrets.GITHUB }}
+          script: |
+            const body = process.env.SUMMARY;
+            const title = 'Terraform Configuration Drift Detected';
+            const creator = 'github-actions[bot]';
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+
+            const match = issues.data.find(i => i.title === title && i.user.login === creator);
+
+            if (match) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
+
+      - name: ✅ Close Drift Issue
+        if: steps.drift-detect.outputs.exitcode == '0'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB }}
+          script: |
+            const title = 'Terraform Configuration Drift Detected';
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+
+            const match = issues.data.find(i => i.title === title);
+
+            if (match) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                state: 'closed'
+              });
+            }
+
+      - name: ❌ Fail Workflow on Drift
+        if: steps.drift-detect.outputs.exitcode == '2'
+        run: exit 1
