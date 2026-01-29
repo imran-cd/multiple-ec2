@@ -12,6 +12,7 @@ jobs:
   calling_Smurf_workflow_tfdrift-clouddrove:
     uses: imran-cd/multiple-ec2/.github/workflows/shared_updated_smurf.yml@main
     with:
+        provider: "aws"
         smurf_version: "latest"
         aws_region: "us-east-2"
         working_directory: "."
