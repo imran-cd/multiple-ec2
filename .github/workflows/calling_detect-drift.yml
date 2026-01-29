@@ -1,4 +1,4 @@
-name:  "TF-Drift Calling workflow Using Smurf"
+name:  "TF-Drift"
 on:
     workflow_dispatch:
 
