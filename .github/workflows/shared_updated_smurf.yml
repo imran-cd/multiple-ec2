@@ -85,21 +85,17 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Azure Login (OIDC)
-        if: ${{ inputs.provider == 'azurerm' && secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ inputs.provider == 'azurerm' }}
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Azure Login (SP JSON)
-        if: ${{ inputs.provider == 'azurerm' && secrets.AZURE_CLIENT_ID == '' && secrets.AZURE_CREDENTIALS != '' }}
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+     
 
       - name: Export Azure ARM variables
-        if: ${{ inputs.provider == 'azurerm' && secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ inputs.provider == 'azurerm'  }}
         run: |
             echo "ARM_USE_OIDC=true" >> $GITHUB_ENV
             echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
